@@ -9,6 +9,6 @@
   "engines": { "node": ">=18" },
   "keywords": ["ztalio", "digital-signage", "cli", "roku", "fire-tv", "apple-tv", "lg", "samsung", "google-tv", "agent", "mcp"],
   "homepage": "https://ztalio.com/developers",
-  "repository": { "type": "git", "url": "https://github.com/TVYou/ztalio-cli.git" },
+  "repository": { "type": "git", "url": "https://github.com/ztalio/ztalio-cli.git" },
   "scripts": { "test": "node --test" }
 }
