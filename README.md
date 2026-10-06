@@ -29,6 +29,10 @@ ztalio playlists delete <playlist>
 ztalio push <playlist> --to "Lobby,Bar 2"      (or --all)  — the TVs change within seconds
 ztalio media [--folder <name>] [--type image|video|audio]
 ztalio upload <file…> [--folder <name>]
+ztalio slide --template promo --title "Happy hour" --subtitle "4–6 pm" --badge "$5 margaritas" --push Lobby
+ztalio slide --items "Tacos=$4|three, street style; Burrito=$9 *Popular" --title "Lunch" --add-to "Lunch menu"
+ztalio slide --prompt "lunch menu, six tacos around $4, bold" --preview check.png   (Studio assistant)
+ztalio slide --templates                 the templates (menu board, price list, promo, announcement, hours, welcome, event, portrait menu) and their fields
 ztalio folders | folders create <name>
 ztalio music                             the built-in background tracks
 ztalio api <METHOD> </path> [--data '{…}']     raw call to https://api.ztalio.com/v1
@@ -40,6 +44,15 @@ punctuation don't matter (`beachsunset` finds "Beach Sunset"). Add `--json` to a
 machine-readable output; errors go to stderr as JSON with a `code`.
 
 Environment: `ZTALIO_API_KEY` (overrides the saved key), `ZTALIO_API_BASE`, `ZTALIO_CONFIG_DIR`.
+
+## Slides from text
+
+`ztalio slide` renders a 1920×1080 PNG on the server with the same engine as ztalio.com/studio and
+saves it to your library's "Studio" folder — no file needed. `--items` takes `name=price|description`
+pairs separated by `;` (`*Tag` at the end adds a tag), `--logo`/`--photo` take a picture from your
+library by name, `--accent #RRGGBB` and `--font` restyle the template, `--add-to` appends it to a
+playlist and `--push` sends it to screens in one go. `--preview file.png` renders without saving so
+you (or your assistant) can look first; `--prompt "…"` asks the Studio assistant to lay it out.
 
 ## For AI assistants
 

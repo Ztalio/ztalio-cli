@@ -37,6 +37,18 @@ function parseSchedule(text) {
   return { rules };
 }
 
+// "Tacos=$4|three, street style; Burrito=$9 *Popular; Horchata" → [{ name, price?, desc?, tag? }]
+function parseItems(text) {
+  return text.split(";").map((part) => {
+    let t = part.trim(); if (!t) return null;
+    const item = {};
+    const tag = t.match(/\s\*(\S+)\s*$/); if (tag) { item.tag = tag[1]; t = t.slice(0, tag.index); }
+    const [head, desc] = t.split("|"); if (desc) item.desc = desc.trim();
+    const [name, price] = head.split("="); item.name = name.trim(); if (price) item.price = price.trim();
+    return item.name ? item : null;
+  }).filter(Boolean);
+}
+
 class UsageError extends Error { constructor(m) { super(m); this.code = "USAGE"; } }
 const need = (v, what) => { if (v === undefined || v === null || v === "") throw new UsageError(`Missing ${what}`); return v; };
 
@@ -262,6 +274,56 @@ export const commands = {
     out(json, { uploaded: results }, results.map((r) => `Uploaded ${r.file} (${bytes(r.size)}) — it appears in your library within a minute`).join("\n"));
   },
 
+  // ztalio slide --template promo --title "Happy hour" --subtitle "4-6 pm" --badge "$5 margaritas"
+  //              [--items "Tacos=$4|three, street style; Burrito=$9"] [--logo <file>] [--photo <file>]
+  //              [--accent #F2B544] [--font Inter] [--name "Happy hour"] [--add-to <playlist>] [--push <screens>|--all]
+  // ztalio slide --prompt "lunch menu, six tacos around $4, bold"      (the Studio assistant lays it out)
+  // ztalio slide --templates                                            (what each template accepts)
+  async slide({ api, args, flags, json }) {
+    if (flags.templates) {
+      const { templates } = await api.get("/slides/templates");
+      return out(json, templates, templates.map((t) => `${t.id.padEnd(14)} ${t.name} — ${t.blurb} (${t.size.w}×${t.size.h})\n${"".padEnd(15)}fields: ${Object.keys(t.fields).join(", ")}`).join("\n"));
+    }
+    const fields = {};
+    for (const f of ["title", "subtitle", "kicker", "body", "badge", "accent", "font", "name"]) if (flags[f] !== undefined) fields[f] = String(flags[f]);
+    if (flags.items !== undefined) fields.items = parseItems(String(flags.items));
+    if (flags.logo || flags.photo) {
+      const feed = await mediaOf(api);
+      const images = feed.items.filter((i) => i.mediaType === "image");
+      if (flags.logo) fields.logo = mediaPick(images, flags.logo).s3Key;
+      if (flags.photo) fields.photo = mediaPick(images, flags.photo).s3Key;
+    }
+    const template = flags.template || (fields.items ? (flags.portrait ? "portrait-menu" : "menu-board") : "announcement");
+    if (!flags.prompt && !Object.keys(fields).length) throw new UsageError("Give the slide some content: --title/--subtitle/--body…, --items, or --prompt \"…\". See `ztalio slide --templates`.");
+
+    // Resolve where it should go before rendering, so a bad name fails fast.
+    const body = { template, fields };
+    if (flags["add-to"]) body.playlistId = pick(await playlistsOf(api), String(flags["add-to"]), "playlist", { id: "playlistId" }).playlistId;
+    if (flags.push || flags.all) {
+      const screens = await screensOf(api);
+      body.screenIds = flags.all ? screens.filter((s) => s.status === "paired").map((s) => s.id)
+        : String(flags.push).split(",").map((n) => pick(screens, n.trim(), "screen").id);
+      if (!body.screenIds.length) throw new UsageError("No screens to push to.");
+    }
+    if (flags.prompt) {
+      if (!json) process.stderr.write("Asking the Studio assistant…\n");
+      const p = await api.post("/slides/propose", { template, fields, prompt: String(flags.prompt) });
+      body.doc = p.doc; delete body.template; delete body.fields;
+      if (flags.name) body.name = String(flags.name);
+    }
+    if (flags.preview) {
+      const r = await api.post("/slides/preview", body.doc ? { doc: body.doc } : { template, fields });
+      const file = String(flags.preview) === "true" ? "slide-preview.png" : String(flags.preview);
+      (await import("node:fs")).writeFileSync(file, Buffer.from(r.png, "base64"));
+      return out(json, { file, size: r.size, bytes: r.bytes }, `Preview written to ${file} (${r.size.w}×${r.size.h}) — nothing saved to the library`);
+    }
+    const r = await api.post("/slides", body);
+    const lines = [`Created slide "${r.title}" in your library (${r.s3Key})${r.ready === false ? " — still processing, it appears within a minute" : ""}`];
+    if (r.playlist) lines.push(r.playlist.error ? `Playlist: ${r.playlist.error}` : `Added to playlist (${r.playlist.itemsCount ?? "?"} items now)`);
+    if (r.push) lines.push(r.push.failedDisplays?.length ? `Push failed: ${r.push.failedDisplays.map((f) => `${f.displayId} (${f.reason})`).join(", ")}` : `Pushed to ${body.screenIds.length} screen(s)`);
+    out(json, r, lines.join("\n"));
+  },
+
   async api({ api, args, flags, json }) {
     const method = String(need(args[0], "METHOD")).toUpperCase();
     const path = need(args[1], "path (e.g. /screens)");
@@ -297,6 +359,10 @@ export const HELP = `ztalio — Ztalio digital signage from the command line  (h
   ztalio push <playlist> --to "Lobby,Bar 2"   (or --all)   the TVs change within seconds
   ztalio media [--folder <name>] [--type image|video|audio]
   ztalio upload <file…> [--folder <name>]
+  ztalio slide --title "Happy hour" --subtitle "4–6 pm" --badge "$5 margaritas" --template promo --push Lobby
+  ztalio slide --items "Tacos=$4|street style; Burrito=$9 *Popular" --title "Lunch" --add-to "Lunch menu"
+  ztalio slide --prompt "lunch menu, six tacos around $4, bold"      (Studio assistant)   --preview [file.png]
+  ztalio slide --templates                                             (what each template accepts)
   ztalio folders | folders create <name>
   ztalio music                           built-in background tracks
   ztalio api <METHOD> </path> [--data '{…}']   raw call to https://api.ztalio.com/v1
@@ -320,6 +386,12 @@ to every command and parse stdout. Typical flow:
      ztalio playlists set "Lunch specials" --speed 8 --transition dissolve
 5. Put it on the screen:  ztalio push "Lunch specials" --to "Lobby"      (the TV updates in seconds)
 6. New content:           ztalio upload ./menu.png --folder Promos     (wait ~1 min, then it is in \`ztalio media\`)
+7. A slide from text, no file needed (menu board, promo, announcement, hours, welcome, event):
+     ztalio slide --templates                      → the templates and their fields
+     ztalio slide --template promo --title "Happy hour" --subtitle "4–6 pm" --badge "$5 margaritas" --push Lobby
+     ztalio slide --items "Tacos=$4|three, street style; Burrito=$9 *Popular" --title "Lunch" --add-to "Lunch menu"
+     ztalio slide --prompt "…" --preview check.png  → let the Studio assistant lay it out, look at the PNG first
+   The slide lands in the library's "Studio" folder and can be added to playlists / pushed like any picture.
 
 Before a push, confirm with the user which screen(s) and which playlist. Never push to --all unless
 the user said "all screens". Errors are JSON on stderr with a "code": NO_KEY (ask the user to run
