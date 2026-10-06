@@ -4,11 +4,36 @@
   "description": "Command-line client for Ztalio digital signage — manage screens, playlists and your library from scripts and AI assistants.",
   "license": "MIT",
   "type": "module",
-  "bin": { "ztalio": "bin/ztalio.js" },
-  "files": ["bin", "src", "README.md"],
-  "engines": { "node": ">=18" },
-  "keywords": ["ztalio", "digital-signage", "cli", "roku", "fire-tv", "apple-tv", "lg", "samsung", "google-tv", "agent", "mcp"],
+  "bin": {
+    "ztalio": "bin/ztalio.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ztalio",
+    "digital-signage",
+    "cli",
+    "roku",
+    "fire-tv",
+    "apple-tv",
+    "lg",
+    "samsung",
+    "google-tv",
+    "agent",
+    "mcp"
+  ],
   "homepage": "https://ztalio.com/developers",
-  "repository": { "type": "git", "url": "https://github.com/ztalio/ztalio-cli.git" },
-  "scripts": { "test": "node --test" }
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ztalio/ztalio-cli.git"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
 }
