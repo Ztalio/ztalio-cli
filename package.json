@@ -1,6 +1,6 @@
 {
   "name": "ztalio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Command-line client for Ztalio digital signage — manage screens, playlists and your library from scripts and AI assistants.",
   "license": "MIT",
   "type": "module",
