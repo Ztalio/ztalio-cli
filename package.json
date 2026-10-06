@@ -1,7 +1,7 @@
 {
   "name": "ztalio",
-  "version": "0.2.0",
-  "description": "Command-line client for Ztalio digital signage \u2014 manage screens, playlists and your library from scripts and AI assistants.",
+  "version": "0.3.0",
+  "description": "Command-line client and MCP server for Ztalio digital signage \u2014 manage screens, playlists and your library from scripts and AI assistants.",
   "license": "MIT",
   "type": "module",
   "bin": {

@@ -1,8 +1,8 @@
 # ztalio
 
-Command-line client for [Ztalio](https://ztalio.com) digital signage. Manage your TV screens,
-playlists and media library from the terminal, from scripts, or from an AI assistant such as
-Claude Code or Codex. Zero dependencies; Node 18+.
+Command-line client and MCP server for [Ztalio](https://ztalio.com) digital signage. Manage your
+TV screens, playlists and media library from the terminal, from scripts, or from an AI assistant
+such as Claude, Claude Code, Cursor or Codex. Zero dependencies; Node 18+.
 
 ```sh
 npm install -g ztalio
@@ -53,6 +53,26 @@ pairs separated by `;` (`*Tag` at the end adds a tag), `--logo`/`--photo` take a
 library by name, `--accent #RRGGBB` and `--font` restyle the template, `--add-to` appends it to a
 playlist and `--push` sends it to screens in one go. `--preview file.png` renders without saving so
 you (or your assistant) can look first; `--prompt "…"` asks the Studio assistant to lay it out.
+
+## MCP (Claude Desktop, Claude Code, Cursor, Codex, claude.ai)
+
+The same tools are available over the Model Context Protocol, locally or hosted:
+
+```sh
+ztalio mcp --setup                       # the snippets below, with your key filled in where needed
+claude mcp add ztalio -- ztalio mcp      # Claude Code, local (uses the key from `ztalio login`)
+claude mcp add --transport http ztalio https://api.ztalio.com/v1/mcp --header "Authorization: Bearer ztk_…"
+```
+
+Claude Desktop: Settings → Developer → Edit config → `"ztalio": { "command": "ztalio", "args": ["mcp"] }`.
+claude.ai: Customize → Connectors → Add custom connector → URL `https://api.ztalio.com/v1/mcp`,
+Authentication *No sign-in*, request header `authorization` = `Bearer ztk_…`.
+
+Tools: `whoami`, `list_screens`, `rename_screen`, `list_playlists`, `get_playlist`, `create_playlist`,
+`add_to_playlist`, `remove_from_playlist`, `update_playlist`, `delete_playlist`, `push_playlist`,
+`list_media`, `list_folders`, `list_slide_templates`, `create_slide` (with `preview` the image comes
+back inline), `screen_analytics`. The hosted server is stateless JSON-RPC over POST; your API key
+is the only credential, so plan, scopes, rate limit and audit all apply exactly as for the REST API.
 
 ## For AI assistants
 

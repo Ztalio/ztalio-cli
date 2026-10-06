@@ -5,67 +5,15 @@ import { basename, extname } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ApiError, client, configPath, readConfig, writeConfig } from "./api.js";
 import { ago, bytes, out, speedLabel, table } from "./format.js";
+import { UsageError, norm, pick, parseItems, parseSchedule, TRANSITIONS } from "./resolve.js";
 
-const TRANSITIONS = ["none", "dissolve", "slide", "flip", "zoom"];
 const MIME = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", heic: "image/heic",
   mp4: "video/mp4", mov: "video/quicktime", m4v: "video/x-m4v", webm: "video/webm", mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", aac: "audio/aac" };
 const PART_SIZE = 25 * 1024 * 1024;
 
-// "8-17" · "mon-fri 8-17" · "mon,wed,fri 9-21; sat 10-14" · "off"  →  { rules: [{ startHour, endHour, daysOfWeek? }] }
-// Hours are in the account's timezone (Settings), 0–24; daysOfWeek 0 = Sunday, omitted = every day.
-const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-function parseSchedule(text) {
-  if (["off", "none", "clear"].includes(text.trim().toLowerCase())) return null;
-  const rules = text.split(";").map((part) => {
-    const m = part.trim().toLowerCase().match(/^(?:([a-z,\-]+)\s+)?(\d{1,2})\s*-\s*(\d{1,2})$/);
-    if (!m) throw new UsageError(`Bad schedule "${part.trim()}". Examples: "8-17", "mon-fri 8-17", "mon,wed,fri 9-21; sat 10-14", off`);
-    const startHour = Number(m[2]), endHour = Number(m[3]);
-    if (startHour < 0 || startHour > 23 || endHour < 1 || endHour > 24 || endHour <= startHour) throw new UsageError(`Hours must be 0–24 with end after start: "${part.trim()}"`);
-    const rule = { startHour, endHour };
-    if (m[1]) {
-      const days = new Set();
-      for (const tok of m[1].split(",")) {
-        const r = tok.match(/^([a-z]{3})(?:-([a-z]{3}))?$/);
-        const a = r ? DAYS.indexOf(r[1]) : -1, b = r && r[2] ? DAYS.indexOf(r[2]) : a;
-        if (!r || a < 0 || b < 0) throw new UsageError(`Unknown day "${tok}" (use sun … sat)`);
-        for (let d = a; ; d = (d + 1) % 7) { days.add(d); if (d === b) break; }
-      }
-      if (days.size < 7) rule.daysOfWeek = [...days].sort((x, y) => x - y);
-    }
-    return rule;
-  });
-  return { rules };
-}
-
-// "Tacos=$4|three, street style; Burrito=$9 *Popular; Horchata" → [{ name, price?, desc?, tag? }]
-function parseItems(text) {
-  return text.split(";").map((part) => {
-    let t = part.trim(); if (!t) return null;
-    const item = {};
-    const tag = t.match(/\s\*(\S+)\s*$/); if (tag) { item.tag = tag[1]; t = t.slice(0, tag.index); }
-    const [head, desc] = t.split("|"); if (desc) item.desc = desc.trim();
-    const [name, price] = head.split("="); item.name = name.trim(); if (price) item.price = price.trim();
-    return item.name ? item : null;
-  }).filter(Boolean);
-}
-
-class UsageError extends Error { constructor(m) { super(m); this.code = "USAGE"; } }
 const need = (v, what) => { if (v === undefined || v === null || v === "") throw new UsageError(`Missing ${what}`); return v; };
 
 // ---------- name resolution (id, or case-insensitive unique name / prefix) ----------
-const norm = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-function pick(list, query, label, { id = "id", name = "name", alt = () => "", cmd = `${label}s` } = {}) {
-  const q = norm(query);
-  const keys = (x) => [x[id], x[name], alt(x)].map(norm);
-  const exact = list.filter((x) => keys(x).includes(q));
-  if (exact.length === 1) return exact[0];
-  const partial = list.filter((x) => keys(x).some((k) => k && k.includes(q)));
-  if (partial.length === 1) return partial[0];
-  if (!exact.length && !partial.length) throw new UsageError(`No ${label} matches "${query}". Run \`ztalio ${cmd}\` to see them.`);
-  const c = (exact.length ? exact : partial).slice(0, 8).map((x) => `  ${x[name]}  (${x[id]})`).join("\n");
-  throw new UsageError(`"${query}" matches more than one ${label}:\n${c}\nUse the id.`);
-}
-
 async function screensOf(api) { return (await api.get("/screens")).screens; }
 async function playlistsOf(api) { return await api.get("/playlists"); }
 async function mediaOf(api) { return await api.get("/media"); }
@@ -324,6 +272,14 @@ export const commands = {
     out(json, r, lines.join("\n"));
   },
 
+  // ztalio mcp              → MCP server over stdio (Claude Desktop, Claude Code, Cursor, Codex…)
+  // ztalio mcp --setup      → the config snippets for each host
+  async mcp({ flags, json }) {
+    if (flags.setup) { process.stdout.write(MCP_SETUP); return; }
+    const { serveStdio } = await import("./mcp-stdio.js");
+    await serveStdio({ key: flags.key, base: flags.base });
+  },
+
   async api({ api, args, flags, json }) {
     const method = String(need(args[0], "METHOD")).toUpperCase();
     const path = need(args[1], "path (e.g. /screens)");
@@ -366,10 +322,32 @@ export const HELP = `ztalio — Ztalio digital signage from the command line  (h
   ztalio folders | folders create <name>
   ztalio music                           built-in background tracks
   ztalio api <METHOD> </path> [--data '{…}']   raw call to https://api.ztalio.com/v1
+  ztalio mcp                             MCP server over stdio (Claude Desktop / Claude Code / Cursor / Codex)
+  ztalio mcp --setup                     config snippets for each host; hosted: https://api.ztalio.com/v1/mcp
   ztalio agent                           how an AI assistant should use this tool
 
 Screens and playlists can be named by id or by (part of) their name.
 Global: --json (machine output), --key, --base. Env: ZTALIO_API_KEY, ZTALIO_API_BASE.
+`;
+
+const MCP_SETUP = `# Connect an AI assistant to Ztalio over MCP
+
+Local (stdio) — uses the key saved by \`ztalio login\` (or ZTALIO_API_KEY):
+
+  Claude Code:     claude mcp add ztalio -- ztalio mcp
+  Claude Desktop:  Settings → Developer → Edit config, add under "mcpServers":
+                     "ztalio": { "command": "ztalio", "args": ["mcp"] }
+  Cursor / Codex / others: command "ztalio", args ["mcp"]
+
+Hosted (no install) — your API key in the Authorization header:
+
+  Claude Code:     claude mcp add --transport http ztalio https://api.ztalio.com/v1/mcp --header "Authorization: Bearer ztk_…"
+  claude.ai:       Customize → Connectors → Add custom connector → URL https://api.ztalio.com/v1/mcp,
+                   Authentication "No sign-in", Request header authorization = "Bearer ztk_…"
+
+Tools: whoami, list_screens, rename_screen, list_playlists, get_playlist, create_playlist, add_to_playlist,
+remove_from_playlist, update_playlist, delete_playlist, push_playlist, list_media, list_folders,
+list_slide_templates, create_slide, screen_analytics.
 `;
 
 const AGENT_GUIDE = `# Using the ztalio CLI as an AI assistant
